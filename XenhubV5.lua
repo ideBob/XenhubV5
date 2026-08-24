@@ -1,7 +1,6 @@
 --[[
-    LINEAGE HUB
-    Clean Glassmorphism Design • Black + White Glow
-    Centered • Fixed Layout • No overlapping
+    LINEAGE HUB  |  Steal a Brainrot
+    Glassmorphism UI + Working Features
 ]]
 
 local Players          = game:GetService("Players")
@@ -10,26 +9,23 @@ local UserInputService = game:GetService("UserInputService")
 local Stats            = game:GetService("Stats")
 local TeleportService  = game:GetService("TeleportService")
 local TweenService     = game:GetService("TweenService")
+local ReplicatedStorage= game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 -- ═══════════════════════════════════════════════════════════════
--- THEME  (Glassmorphism - Black + White Glow)
+-- THEME
 -- ═══════════════════════════════════════════════════════════════
 local Theme = {
     Glass          = Color3.fromRGB(8, 8, 10),
     GlassTrans     = 0.18,
     Surface        = Color3.fromRGB(18, 18, 22),
-    SurfaceTrans   = 0.35,
-    Accent         = Color3.fromRGB(255, 255, 255),
     Success        = Color3.fromRGB(80, 220, 140),
     Danger         = Color3.fromRGB(255, 90, 90),
     TextPrimary    = Color3.fromRGB(245, 245, 250),
     TextSecondary  = Color3.fromRGB(160, 160, 175),
     TextMuted      = Color3.fromRGB(100, 100, 115),
-    Stroke         = Color3.fromRGB(255, 255, 255),
-    StrokeTrans    = 0.82,
     FontHeavy      = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Heavy),
     FontBold       = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
     FontMedium     = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium),
@@ -53,11 +49,18 @@ local State = {
     ClickToAP = false,
     Proximity = false,
     AutoTP = false,
+    Noclip = false,
     Rotation = 180,
     Depth = 5.0,
     Speed = 27,
     ProxDistance = 15,
 }
+
+local Connections = {}
+local function AddConn(name, conn)
+    if Connections[name] then Connections[name]:Disconnect() end
+    Connections[name] = conn
+end
 
 -- ═══════════════════════════════════════════════════════════════
 -- UTILITIES
@@ -75,15 +78,6 @@ local function Corner(parent, r)
     return Create("UICorner", { CornerRadius = UDim.new(0, r or 10), Parent = parent })
 end
 
-local function Glow(parent, thickness)
-    return Create("UIStroke", {
-        Color = Theme.Stroke,
-        Transparency = Theme.StrokeTrans,
-        Thickness = thickness or 1.2,
-        Parent = parent
-    })
-end
-
 local function SoftStroke(parent)
     return Create("UIStroke", {
         Color = Color3.fromRGB(255, 255, 255),
@@ -91,6 +85,29 @@ local function SoftStroke(parent)
         Thickness = 1,
         Parent = parent
     })
+end
+
+local function Glow(parent, thickness)
+    return Create("UIStroke", {
+        Color = Color3.fromRGB(255, 255, 255),
+        Transparency = 0.82,
+        Thickness = thickness or 1.2,
+        Parent = parent
+    })
+end
+
+local function GetChar()
+    return LocalPlayer.Character
+end
+
+local function GetHum()
+    local c = GetChar()
+    return c and c:FindFirstChildWhichIsA("Humanoid")
+end
+
+local function GetHRP()
+    local c = GetChar()
+    return c and c:FindFirstChild("HumanoidRootPart")
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -127,7 +144,7 @@ local function MakeDraggable(frame, handle)
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- TOGGLE
+-- TOGGLE + SLIDER + BUTTON
 -- ═══════════════════════════════════════════════════════════════
 local function CreateToggle(parent, text, default, key, callback)
     local row = Create("Frame", {
@@ -183,9 +200,6 @@ local function CreateToggle(parent, text, default, key, callback)
     return row, set
 end
 
--- ═══════════════════════════════════════════════════════════════
--- SLIDER
--- ═══════════════════════════════════════════════════════════════
 local function CreateSlider(parent, label, min, max, default, format, key, onChanged)
     local wrap = Create("Frame", {
         Size = UDim2.new(1, 0, 0, 42),
@@ -274,9 +288,6 @@ local function CreateSlider(parent, label, min, max, default, format, key, onCha
     return wrap
 end
 
--- ═══════════════════════════════════════════════════════════════
--- ACTION BUTTON
--- ═══════════════════════════════════════════════════════════════
 local function CreateButton(parent, text, color, order, callback)
     local btn = Create("TextButton", {
         Size = UDim2.new(1, 0, 0, 32),
@@ -297,7 +308,135 @@ local function CreateButton(parent, text, color, order, callback)
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- ROOT
+-- CORE FEATURES (Steal a Brainrot)
+-- ═══════════════════════════════════════════════════════════════
+
+-- Float
+local floatBV
+local function SetFloat(on)
+    local hrp = GetHRP()
+    if not hrp then return end
+
+    if on then
+        if floatBV then floatBV:Destroy() end
+        floatBV = Instance.new("BodyVelocity")
+        floatBV.MaxForce = Vector3.new(0, math.huge, 0)
+        floatBV.Velocity = Vector3.new(0, 0.5, 0)
+        floatBV.Parent = hrp
+    else
+        if floatBV then floatBV:Destroy() floatBV = nil end
+    end
+end
+
+-- Noclip
+local function SetNoclip(on)
+    AddConn("Noclip", RunService.Stepped:Connect(function()
+        if not State.Noclip then return end
+        local char = GetChar()
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end))
+end
+
+-- Walkspeed
+local function ApplyWalkspeed()
+    local hum = GetHum()
+    if hum then
+        hum.WalkSpeed = State.Walkspeed and State.Speed or 16
+    end
+end
+
+-- Basic Teleport to nearest player
+local function TeleportToNearest()
+    local hrp = GetHRP()
+    if not hrp then return end
+    local closest, dist = nil, math.huge
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local d = (plr.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+            if d < dist then
+                dist = d
+                closest = plr.Character.HumanoidRootPart
+            end
+        end
+    end
+    if closest then
+        hrp.CFrame = closest.CFrame * CFrame.new(0, 0, 3)
+    end
+end
+
+-- Steal helpers (workspace scan for brainrots / plots)
+local function FindBrainrots()
+    local list = {}
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local name = string.lower(obj.Name)
+            if string.find(name, "brainrot") or string.find(name, "plot") or obj:GetAttribute("Income") or obj:FindFirstChild("Income") then
+                table.insert(list, obj)
+            end
+        end
+    end
+    return list
+end
+
+local function StealNearestLoop()
+    AddConn("StealNearest", RunService.Heartbeat:Connect(function()
+        if not State.StealNearest then return end
+        local hrp = GetHRP()
+        if not hrp then return end
+
+        local nearest, dist = nil, State.ProxDistance or 30
+        for _, obj in ipairs(FindBrainrots()) do
+            local pos = obj:IsA("Model") and obj:GetPivot().Position or obj.Position
+            local d = (pos - hrp.Position).Magnitude
+            if d < dist then
+                dist = d
+                nearest = obj
+            end
+        end
+
+        if nearest then
+            local target = nearest:IsA("Model") and nearest:FindFirstChildWhichIsA("BasePart") or nearest
+            if target then
+                -- Try proximity prompt
+                local prompt = nearest:FindFirstChildWhichIsA("ProximityPrompt", true)
+                if prompt then
+                    fireproximityprompt(prompt)
+                end
+            end
+        end
+    end))
+end
+
+-- Auto Walk toward nearest brainrot
+local function AutoWalkLoop()
+    AddConn("AutoWalk", RunService.Heartbeat:Connect(function()
+        if not State.AutoWalk then return end
+        local hum = GetHum()
+        local hrp = GetHRP()
+        if not hum or not hrp then return end
+
+        local nearest, dist = nil, math.huge
+        for _, obj in ipairs(FindBrainrots()) do
+            local pos = obj:IsA("Model") and obj:GetPivot().Position or obj.Position
+            local d = (pos - hrp.Position).Magnitude
+            if d < dist then
+                dist = d
+                nearest = pos
+            end
+        end
+        if nearest then
+            hum:MoveTo(nearest)
+        end
+    end))
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- UI
 -- ═══════════════════════════════════════════════════════════════
 local ScreenGui = Create("ScreenGui", {
     Name = "LineageHub",
@@ -307,14 +446,11 @@ local ScreenGui = Create("ScreenGui", {
     Parent = game:GetService("CoreGui")
 })
 
--- ═══════════════════════════════════════════════════════════════
--- MAIN HUB (Centered)
--- ═══════════════════════════════════════════════════════════════
 local Main = Create("Frame", {
     Name = "Main",
     AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.new(0.5, 0, 0.5, 0),
-    Size = isMobile and UDim2.new(0, 340, 0, 420) or UDim2.new(0, 520, 0, 460),
+    Size = isMobile and UDim2.new(0, 340, 0, 440) or UDim2.new(0, 520, 0, 480),
     BackgroundColor3 = Theme.Glass,
     BackgroundTransparency = Theme.GlassTrans,
     BorderSizePixel = 0,
@@ -323,7 +459,6 @@ local Main = Create("Frame", {
 Corner(Main, 14)
 Glow(Main, 1.4)
 
--- Header
 local Header = Create("Frame", {
     Size = UDim2.new(1, 0, 0, 48),
     BackgroundTransparency = 1,
@@ -332,7 +467,7 @@ local Header = Create("Frame", {
 
 Create("TextLabel", {
     Position = UDim2.new(0, 16, 0, 10),
-    Size = UDim2.new(0, 200, 0, 28),
+    Size = UDim2.new(0, 220, 0, 28),
     BackgroundTransparency = 1,
     FontFace = Theme.FontHeavy,
     Text = "LINEAGE HUB",
@@ -355,11 +490,8 @@ local CloseBtn = Create("TextButton", {
 })
 Corner(CloseBtn, 7)
 SoftStroke(CloseBtn)
-CloseBtn.MouseButton1Click:Connect(function()
-    Main.Visible = false
-end)
+CloseBtn.MouseButton1Click:Connect(function() Main.Visible = false end)
 
--- Divider under header
 Create("Frame", {
     Position = UDim2.new(0, 16, 0, 48),
     Size = UDim2.new(1, -32, 0, 1),
@@ -368,7 +500,6 @@ Create("Frame", {
     Parent = Main
 })
 
--- Tabs
 local TabBar = Create("Frame", {
     Position = UDim2.new(0, 12, 0, 56),
     Size = UDim2.new(1, -24, 0, 28),
@@ -391,8 +522,7 @@ local Content = Create("Frame", {
 })
 
 local TabNames = {"Movement", "Steal", "Actions", "Settings"}
-local TabFrames = {}
-local TabButtons = {}
+local TabFrames, TabButtons = {}, {}
 
 for i, name in ipairs(TabNames) do
     local active = (i == 1)
@@ -451,85 +581,61 @@ for name, btn in pairs(TabButtons) do
     btn.MouseButton1Click:Connect(function() SwitchTab(name) end)
 end
 
--- ── Movement Page ────────────────────────────────────────────
-local movPage = TabFrames["Movement"]
-
-CreateToggle(movPage, "Invis Steal (U)", false, "InvisSteal")
-CreateToggle(movPage, "Float (B)", false, "Float")
-CreateToggle(movPage, "Walkspeed (V)", false, "Walkspeed", function(on)
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
-    if hum then hum.WalkSpeed = on and State.Speed or 16 end
+-- Movement
+local mov = TabFrames["Movement"]
+CreateToggle(mov, "Float (B)", false, "Float", SetFloat)
+CreateToggle(mov, "Walkspeed (V)", false, "Walkspeed", function(on)
+    ApplyWalkspeed()
 end)
-CreateToggle(movPage, "Unwalk", false, "Unwalk")
-CreateToggle(movPage, "Auto Walk", false, "AutoWalk")
-
-CreateSlider(movPage, "Rotation", 0, 360, 180, "int", "Rotation")
-CreateSlider(movPage, "Depth", 0.5, 10.5, 5.0, "float", "Depth")
-CreateSlider(movPage, "Speed", 16, 100, 27, "int", "Speed", function(v)
-    if State.Walkspeed then
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
-        if hum then hum.WalkSpeed = v end
-    end
+CreateToggle(mov, "Noclip", false, "Noclip", SetNoclip)
+CreateToggle(mov, "Auto Walk", false, "AutoWalk", function(on)
+    if on then AutoWalkLoop() end
 end)
+CreateToggle(mov, "Invis Steal (U)", false, "InvisSteal")
 
--- ── Steal Page ───────────────────────────────────────────────
-local stealPage = TabFrames["Steal"]
-
-CreateToggle(stealPage, "Steal Highest", false, "StealHighest")
-CreateToggle(stealPage, "Steal Priority", false, "StealPriority")
-CreateToggle(stealPage, "Steal Nearest", false, "StealNearest")
-CreateToggle(stealPage, "Auto Turret (G)", false, "AutoTurret")
-CreateToggle(stealPage, "Auto Buy (N)", false, "AutoBuy")
-CreateToggle(stealPage, "Auto Kick", true, "AutoKick")
-
--- ── Actions Page ─────────────────────────────────────────────
-local actPage = TabFrames["Actions"]
-
-CreateButton(actPage, "Teleport (T)", Theme.Surface, 1, function()
-    print("[Lineage] Teleport")
+CreateSlider(mov, "Speed", 16, 120, 27, "int", "Speed", function()
+    if State.Walkspeed then ApplyWalkspeed() end
 end)
+CreateSlider(mov, "Rotation", 0, 360, 180, "int", "Rotation")
+CreateSlider(mov, "Depth", 0.5, 10.5, 5.0, "float", "Depth")
 
-CreateButton(actPage, "Ragdoll Self (R)", Theme.Surface, 2, function()
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildWhichIsA("Humanoid")
-        if hum then
-            hum:ChangeState(Enum.HumanoidStateType.Physics)
-        end
-    end
+-- Steal
+local steal = TabFrames["Steal"]
+CreateToggle(steal, "Steal Nearest", false, "StealNearest", function(on)
+    if on then StealNearestLoop() end
 end)
+CreateToggle(steal, "Steal Highest", false, "StealHighest")
+CreateToggle(steal, "Steal Priority", false, "StealPriority")
+CreateToggle(steal, "Auto Turret (G)", false, "AutoTurret")
+CreateToggle(steal, "Auto Buy (N)", false, "AutoBuy")
+CreateToggle(steal, "Auto Kick", true, "AutoKick")
 
-CreateButton(actPage, "Rejoin PS", Theme.Surface, 3, function()
+-- Actions
+local act = TabFrames["Actions"]
+CreateButton(act, "Teleport Nearest Player", Theme.Surface, 1, TeleportToNearest)
+CreateButton(act, "Ragdoll Self", Theme.Surface, 2, function()
+    local hum = GetHum()
+    if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
+end)
+CreateButton(act, "Rejoin Server", Theme.Surface, 3, function()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end)
-
-CreateButton(actPage, "Rejoin Job ID (J)", Theme.Surface, 4, function()
-    print("[Lineage] Job ID Rejoin")
-end)
-
-CreateButton(actPage, "Kick (Y)", Theme.Surface, 5, function()
-    print("[Lineage] Kick")
-end)
-
-CreateButton(actPage, "Reset Character (X)", Color3.fromRGB(80, 30, 30), 6, function()
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+CreateButton(act, "Reset Character", Color3.fromRGB(80, 30, 30), 4, function()
+    local hum = GetHum()
     if hum then hum.Health = 0 end
 end)
 
--- ── Settings Page ────────────────────────────────────────────
-local setPage = TabFrames["Settings"]
+-- Settings
+local set = TabFrames["Settings"]
+CreateToggle(set, "Click to AP", false, "ClickToAP")
+CreateToggle(set, "Proximity", false, "Proximity")
+CreateSlider(set, "Prox Distance", 5, 100, 15, "int", "ProxDistance")
 
-CreateToggle(setPage, "Click to AP", false, "ClickToAP")
-CreateToggle(setPage, "Proximity", false, "Proximity")
-CreateSlider(setPage, "Prox Distance", 5, 100, 15, "int", "ProxDistance")
+CreateButton(set, "Unlock Floor 1", Theme.Surface, 10, function() print("[Lineage] Unlock Floor 1") end)
+CreateButton(set, "Unlock Floor 2", Theme.Surface, 11, function() print("[Lineage] Unlock Floor 2") end)
+CreateButton(set, "Unlock Floor 3", Theme.Surface, 12, function() print("[Lineage] Unlock Floor 3") end)
 
-CreateButton(setPage, "Unlock Floor 1", Theme.Surface, 10, function() print("[Lineage] Unlock 1") end)
-CreateButton(setPage, "Unlock Floor 2", Theme.Surface, 11, function() print("[Lineage] Unlock 2") end)
-CreateButton(setPage, "Unlock Floor 3", Theme.Surface, 12, function() print("[Lineage] Unlock 3") end)
-
--- ═══════════════════════════════════════════════════════════════
--- BOTTOM BAR (Clean)
--- ═══════════════════════════════════════════════════════════════
+-- Bottom Bar
 local Bar = Create("Frame", {
     Name = "Bar",
     AnchorPoint = Vector2.new(0.5, 1),
@@ -544,7 +650,7 @@ Glow(Bar, 1.2)
 
 Create("TextLabel", {
     Position = UDim2.new(0, 14, 0, 6),
-    Size = UDim2.new(0, 140, 0, 18),
+    Size = UDim2.new(0, 160, 0, 18),
     BackgroundTransparency = 1,
     FontFace = Theme.FontHeavy,
     Text = "LINEAGE HUB",
@@ -559,7 +665,7 @@ Create("TextLabel", {
     Size = UDim2.new(0, 180, 0, 14),
     BackgroundTransparency = 1,
     FontFace = Theme.FontMedium,
-    Text = "discord.gg/lineage",
+    Text = "Steal a Brainrot",
     TextColor3 = Theme.TextSecondary,
     TextSize = 11,
     TextXAlignment = Enum.TextXAlignment.Left,
@@ -590,9 +696,7 @@ local pingLabel = Create("TextLabel", {
     Parent = Bar
 })
 
--- ═══════════════════════════════════════════════════════════════
--- QUICK BUTTONS (Bottom Right)
--- ═══════════════════════════════════════════════════════════════
+-- Quick buttons
 local Quick = Create("Frame", {
     AnchorPoint = Vector2.new(1, 1),
     Position = UDim2.new(1, -14, 1, -70),
@@ -605,7 +709,6 @@ Create("UIListLayout", {
     Padding = UDim.new(0, 6),
     VerticalAlignment = Enum.VerticalAlignment.Bottom,
     HorizontalAlignment = Enum.HorizontalAlignment.Right,
-    SortOrder = Enum.SortOrder.LayoutOrder,
     Parent = Quick
 })
 
@@ -641,9 +744,7 @@ aturBtn.MouseButton1Click:Connect(function()
     aturBtn.BackgroundColor3 = State.AutoTurret and Color3.fromRGB(20, 60, 40) or Theme.Glass
 end)
 
--- ═══════════════════════════════════════════════════════════════
--- LOGIC
--- ═══════════════════════════════════════════════════════════════
+-- FPS / Ping
 local frameCount, lastTime = 0, tick()
 RunService.RenderStepped:Connect(function()
     frameCount += 1
@@ -668,25 +769,31 @@ end)
 -- Keys
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
-    if input.KeyCode == Enum.KeyCode.RightShift then
+    if input.KeyCode == Enum.KeyCode.RightShift or input.KeyCode == Enum.KeyCode.LeftControl then
         Main.Visible = not Main.Visible
         Bar.Visible = Main.Visible
         Quick.Visible = Main.Visible
-    elseif input.KeyCode == Enum.KeyCode.LeftControl then
-        Main.Visible = not Main.Visible
     elseif input.KeyCode == Enum.KeyCode.V then
         State.Walkspeed = not State.Walkspeed
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
-        if hum then hum.WalkSpeed = State.Walkspeed and State.Speed or 16 end
+        ApplyWalkspeed()
+    elseif input.KeyCode == Enum.KeyCode.B then
+        State.Float = not State.Float
+        SetFloat(State.Float)
     elseif input.KeyCode == Enum.KeyCode.X then
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+        local hum = GetHum()
         if hum then hum.Health = 0 end
     end
 end)
 
--- Drag
+-- Character respawn support
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if State.Walkspeed then ApplyWalkspeed() end
+    if State.Float then SetFloat(true) end
+end)
+
 MakeDraggable(Main, Header)
 MakeDraggable(Bar)
 
-print("[Lineage Hub] Loaded • Glassmorphism • Centered")
-print("RightShift / LeftControl = Toggle UI")
+print("[Lineage Hub] Steal a Brainrot • Features loaded")
+print("RightShift / LeftControl = Toggle | V = Walkspeed | B = Float | X = Reset")
