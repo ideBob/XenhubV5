@@ -1,6 +1,6 @@
 --[[
-    XenhubV5 Combined GUI - Cleaned & Optimized
-    Smart modular structure • Theme-driven • Easy to extend
+    XenhubV5 Combined GUI - Cleaned, Optimized & Mobile Ready
+    Smaller panels for mobile • Full drag support • Working toggles/sliders/buttons
 ]]
 
 local Players          = game:GetService("Players")
@@ -8,8 +8,10 @@ local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Stats            = game:GetService("Stats")
 local TeleportService  = game:GetService("TeleportService")
+local TweenService     = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 -- ═══════════════════════════════════════════════════════════════
 -- THEME
@@ -17,9 +19,7 @@ local LocalPlayer = Players.LocalPlayer
 local Theme = {
     Background     = Color3.fromRGB(12, 12, 18),
     Surface        = Color3.fromRGB(40, 40, 50),
-    SurfaceDark    = Color3.fromRGB(25, 25, 35),
     Accent         = Color3.fromRGB(99, 102, 241),
-    AccentSoft     = Color3.fromRGB(130, 140, 255),
     Success        = Color3.fromRGB(74, 222, 128),
     Danger         = Color3.fromRGB(248, 113, 113),
     TextPrimary    = Color3.fromRGB(255, 255, 255),
@@ -31,26 +31,44 @@ local Theme = {
 }
 
 -- ═══════════════════════════════════════════════════════════════
+-- STATE
+-- ═══════════════════════════════════════════════════════════════
+local State = {
+    InvisSteal = false,
+    Float = false,
+    Walkspeed = false,
+    Unwalk = false,
+    AutoWalk = false,
+    StealHighest = false,
+    StealPriority = false,
+    StealNearest = false,
+    AutoTurret = false,
+    AutoBuy = false,
+    AutoKick = true,
+    ClickToAP = false,
+    Proximity = false,
+    AutoTP = false,
+    Desync = false,
+    Rotation = 180,
+    Depth = 5.0,
+    Speed = 27,
+    ProxDistance = 15,
+}
+
+-- ═══════════════════════════════════════════════════════════════
 -- UTILITIES
 -- ═══════════════════════════════════════════════════════════════
 local function Create(class, props)
     local obj = Instance.new(class)
     for k, v in pairs(props or {}) do
-        if k ~= "Parent" then
-            obj[k] = v
-        end
+        if k ~= "Parent" then obj[k] = v end
     end
-    if props and props.Parent then
-        obj.Parent = props.Parent
-    end
+    if props and props.Parent then obj.Parent = props.Parent end
     return obj
 end
 
 local function Corner(parent, radius)
-    return Create("UICorner", {
-        CornerRadius = UDim.new(0, radius or 6),
-        Parent = parent
-    })
+    return Create("UICorner", { CornerRadius = UDim.new(0, radius or 6), Parent = parent })
 end
 
 local function Stroke(parent, color, transparency, thickness)
@@ -69,11 +87,50 @@ local function Gradient(parent, colors)
 end
 
 -- ═══════════════════════════════════════════════════════════════
--- FACTORIES
+-- DRAGGABLE (Mouse + Touch)
 -- ═══════════════════════════════════════════════════════════════
-local function CreateToggle(parent, labelText, defaultOn, callback)
+local function MakeDraggable(frame, handle)
+    handle = handle or frame
+    local dragging = false
+    local dragStart, startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+
+            local conn
+            conn = input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    conn:Disconnect()
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input)
+        end
+    end)
+end
+
+-- ═══════════════════════════════════════════════════════════════
+-- TOGGLE FACTORY (Working Switch)
+-- ═══════════════════════════════════════════════════════════════
+local function CreateToggle(parent, labelText, defaultOn, key, callback)
     local row = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 34),
+        Size = UDim2.new(1, 0, 0, isMobile and 30 or 34),
         BackgroundColor3 = Theme.Surface,
         BackgroundTransparency = 0.85,
         BorderSizePixel = 0,
@@ -82,23 +139,24 @@ local function CreateToggle(parent, labelText, defaultOn, callback)
     Corner(row, 6)
 
     Create("TextLabel", {
-        Position = UDim2.new(0, 10, 0, 0),
-        Size = UDim2.new(1, -55, 1, 0),
+        Position = UDim2.new(0, 8, 0, 0),
+        Size = UDim2.new(1, -50, 1, 0),
         BackgroundTransparency = 1,
         FontFace = Theme.FontMedium,
         Text = labelText,
         TextColor3 = Theme.TextPrimary,
-        TextSize = 12,
+        TextSize = isMobile and 11 or 12,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextTruncate = Enum.TextTruncate.AtEnd,
         Parent = row
     })
 
     local btn = Create("TextButton", {
-        Position = UDim2.new(1, -48, 0.5, -10),
-        Size = UDim2.new(0, 38, 0, 20),
+        Position = UDim2.new(1, -42, 0.5, -9),
+        Size = UDim2.new(0, 34, 0, 18),
         BackgroundColor3 = defaultOn and Theme.Success or Color3.fromRGB(60, 60, 60),
         Text = "",
+        AutoButtonColor = false,
         Parent = row
     })
     Corner(btn, 99)
@@ -106,73 +164,61 @@ local function CreateToggle(parent, labelText, defaultOn, callback)
     local knob = Create("Frame", {
         Size = UDim2.new(0, 14, 0, 14),
         BackgroundColor3 = Theme.TextPrimary,
-        Position = defaultOn and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+        Position = defaultOn and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7),
         Parent = btn
     })
     Corner(knob, 99)
 
     local state = defaultOn
-    btn.MouseButton1Click:Connect(function()
-        state = not state
+    if key then State[key] = state end
+
+    local function setState(v)
+        state = v
+        if key then State[key] = v end
         btn.BackgroundColor3 = state and Theme.Success or Color3.fromRGB(60, 60, 60)
-        knob.Position = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
+        TweenService:Create(knob, TweenInfo.new(0.15), {
+            Position = state and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+        }):Play()
         if callback then callback(state) end
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        setState(not state)
     end)
 
-    return row, function() return state end, function(v)
-        state = v
-        btn.BackgroundColor3 = state and Theme.Success or Color3.fromRGB(60, 60, 60)
-        knob.Position = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-    end
+    return row, function() return state end, setState
 end
 
-local function CreateActionButton(parent, text, color, layoutOrder, callback)
-    local btn = Create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 30),
-        BackgroundColor3 = color or Theme.Surface,
-        BackgroundTransparency = 0.3,
-        LayoutOrder = layoutOrder or 0,
-        FontFace = Theme.FontBold,
-        Text = text,
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 13,
-        Parent = parent
-    })
-    Corner(btn, 6)
-    Stroke(btn)
-    if callback then
-        btn.MouseButton1Click:Connect(callback)
-    end
-    return btn
-end
-
-local function CreateSlider(parent, label, min, max, default, format, onChanged)
+-- ═══════════════════════════════════════════════════════════════
+-- SLIDER FACTORY (Working + Mobile)
+-- ═══════════════════════════════════════════════════════════════
+local function CreateSlider(parent, label, min, max, default, format, key, onChanged)
     local wrap = Create("Frame", {
-        Size = UDim2.new(1, -16, 0, 40),
+        Size = UDim2.new(1, 0, 0, isMobile and 36 or 42),
         BackgroundTransparency = 1,
         Parent = parent
     })
 
     local lbl = Create("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 16),
+        Size = UDim2.new(1, 0, 0, 14),
         BackgroundTransparency = 1,
         FontFace = Theme.FontBold,
         Text = label .. ": " .. (format == "float" and string.format("%.1f", default) or tostring(math.round(default))),
         TextColor3 = Theme.TextPrimary,
-        TextSize = 13,
+        TextSize = isMobile and 11 or 12,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = wrap
     })
 
     local track = Create("Frame", {
-        Position = UDim2.new(0, 0, 0, 22),
+        Position = UDim2.new(0, 0, 0, 18),
         Size = UDim2.new(1, 0, 0, 8),
         BackgroundColor3 = Theme.Surface,
         Parent = wrap
     })
     Corner(track, 99)
 
-    local pct = (default - min) / (max - min)
+    local pct = math.clamp((default - min) / (max - min), 0, 1)
     local fill = Create("Frame", {
         Size = UDim2.new(pct, 0, 1, 0),
         BackgroundColor3 = Theme.Accent,
@@ -182,14 +228,16 @@ local function CreateSlider(parent, label, min, max, default, format, onChanged)
 
     local knob = Create("Frame", {
         Position = UDim2.new(pct, 0, 0.5, 0),
-        Size = UDim2.new(0, 12, 0, 12),
+        Size = UDim2.new(0, isMobile and 16 or 14, 0, isMobile and 16 or 14),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundColor3 = Theme.TextPrimary,
         Parent = track
     })
     Corner(knob, 99)
+    Stroke(knob, Theme.Accent, 0.3, 1.5)
 
     local dragging = false
+
     local function update(p)
         p = math.clamp(p, 0, 1)
         local val = min + (max - min) * p
@@ -199,25 +247,29 @@ local function CreateSlider(parent, label, min, max, default, format, onChanged)
         fill.Size = UDim2.new(p, 0, 1, 0)
         knob.Position = UDim2.new(p, 0, 0.5, 0)
         lbl.Text = label .. ": " .. (format == "float" and string.format("%.1f", val) or tostring(math.round(val)))
+
+        if key then State[key] = val end
         if onChanged then onChanged(val) end
     end
 
-    local function beginDrag(input)
+    local function begin(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             local rel = (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X
             update(rel)
+
+            local conn
+            conn = input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    conn:Disconnect()
+                end
+            end)
         end
     end
 
-    track.InputBegan:Connect(beginDrag)
-    knob.InputBegan:Connect(beginDrag)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
+    track.InputBegan:Connect(begin)
+    knob.InputBegan:Connect(begin)
 
     UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
@@ -229,33 +281,29 @@ local function CreateSlider(parent, label, min, max, default, format, onChanged)
     return wrap
 end
 
-local function MakeDraggable(frame, handle)
-    handle = handle or frame
-    local dragging, dragStart, startPos
+-- ═══════════════════════════════════════════════════════════════
+-- ACTION BUTTON
+-- ═══════════════════════════════════════════════════════════════
+local function CreateActionButton(parent, text, color, layoutOrder, callback)
+    local btn = Create("TextButton", {
+        Size = UDim2.new(1, 0, 0, isMobile and 28 or 30),
+        BackgroundColor3 = color or Theme.Surface,
+        BackgroundTransparency = 0.25,
+        LayoutOrder = layoutOrder or 0,
+        FontFace = Theme.FontBold,
+        Text = text,
+        TextColor3 = Theme.TextPrimary,
+        TextSize = isMobile and 12 or 13,
+        AutoButtonColor = true,
+        Parent = parent
+    })
+    Corner(btn, 6)
+    Stroke(btn)
 
-    handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-        end
-    end)
-
-    handle.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
+    if callback then
+        btn.MouseButton1Click:Connect(callback)
+    end
+    return btn
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -265,40 +313,49 @@ local ScreenGui = Create("ScreenGui", {
     Name = "XenhubV5",
     ResetOnSpawn = false,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = true,
     Parent = game:GetService("CoreGui")
 })
 
+-- Size helpers for mobile
+local function PSize(w, h)
+    if isMobile then
+        return UDim2.new(0, math.floor(w * 0.72), 0, math.floor(h * 0.72))
+    end
+    return UDim2.new(0, w, 0, h)
+end
+
 -- ═══════════════════════════════════════════════════════════════
--- SETTINGS PANEL
+-- SETTINGS PANEL (smaller on mobile)
 -- ═══════════════════════════════════════════════════════════════
 local SettingsPanel = Create("Frame", {
     Name = "XenhubV5",
-    Position = UDim2.new(1, -968, 0.5, -247),
-    Size = UDim2.new(0, 385, 0, 520),
+    Position = isMobile and UDim2.new(0.5, -140, 0.5, -190) or UDim2.new(1, -400, 0.5, -250),
+    Size = PSize(385, 480),
     BackgroundColor3 = Theme.Background,
-    BackgroundTransparency = 0.08,
+    BackgroundTransparency = 0.06,
     BorderSizePixel = 0,
     ZIndex = 100,
+    Visible = false,
     Parent = ScreenGui
 })
-Corner(SettingsPanel, 12)
+Corner(SettingsPanel, 10)
 
--- Header
 local Header = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 50),
+    Size = UDim2.new(1, 0, 0, isMobile and 36 or 42),
     BackgroundTransparency = 1,
     ZIndex = 101,
     Parent = SettingsPanel
 })
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 12, 0, 14),
-    Size = UDim2.new(0, 150, 0, 24),
+    Position = UDim2.new(0, 10, 0, isMobile and 8 or 10),
+    Size = UDim2.new(0, 140, 0, 22),
     BackgroundTransparency = 1,
     FontFace = Theme.FontHeavy,
     Text = "XENHUB V5",
     TextColor3 = Theme.TextPrimary,
-    TextSize = 18,
+    TextSize = isMobile and 15 or 17,
     TextXAlignment = Enum.TextXAlignment.Left,
     ZIndex = 101,
     Parent = Header
@@ -306,44 +363,43 @@ Create("TextLabel", {
 
 local CloseBtn = Create("TextButton", {
     Name = "CloseBtn",
-    Position = UDim2.new(1, -40, 0, 10),
-    Size = UDim2.new(0, 30, 0, 30),
+    Position = UDim2.new(1, -34, 0, isMobile and 6 or 8),
+    Size = UDim2.new(0, 26, 0, 26),
     BackgroundColor3 = Theme.Danger,
-    BackgroundTransparency = 0.7,
+    BackgroundTransparency = 0.6,
     FontFace = Theme.FontBold,
     Text = "×",
     TextColor3 = Theme.TextPrimary,
-    TextSize = 20,
+    TextSize = 18,
     ZIndex = 101,
     Parent = Header
 })
-Corner(CloseBtn, 6)
+Corner(CloseBtn, 5)
 CloseBtn.MouseButton1Click:Connect(function()
     SettingsPanel.Visible = false
 end)
 
--- Divider
 Create("Frame", {
-    Position = UDim2.new(0, 12, 0, 52),
-    Size = UDim2.new(1, -24, 0, 1),
-    BackgroundColor3 = Color3.new(1, 1, 1),
+    Position = UDim2.new(0, 10, 0, isMobile and 36 or 44),
+    Size = UDim2.new(1, -20, 0, 1),
+    BackgroundColor3 = Color3.new(1,1,1),
     BackgroundTransparency = 0.9,
     ZIndex = 101,
     Parent = SettingsPanel
 })
 
--- Navigation
+-- Nav
 local NavFrame = Create("Frame", {
     Name = "NavFrame",
-    Position = UDim2.new(0, 5, 0, 56),
-    Size = UDim2.new(1, -10, 0, 28),
+    Position = UDim2.new(0, 6, 0, isMobile and 42 or 50),
+    Size = UDim2.new(1, -12, 0, isMobile and 24 or 26),
     BackgroundTransparency = 1,
     ZIndex = 102,
     Parent = SettingsPanel
 })
 
 Create("UIListLayout", {
-    Padding = UDim.new(0, 3),
+    Padding = UDim.new(0, 2),
     FillDirection = Enum.FillDirection.Horizontal,
     SortOrder = Enum.SortOrder.LayoutOrder,
     Parent = NavFrame
@@ -351,51 +407,41 @@ Create("UIListLayout", {
 
 local ContentFrame = Create("Frame", {
     Name = "ContentFrame",
-    Position = UDim2.new(0, 10, 0, 86),
-    Size = UDim2.new(1, -20, 1, -90),
+    Position = UDim2.new(0, 8, 0, isMobile and 70 or 82),
+    Size = UDim2.new(1, -16, 1, isMobile and -78 or -90),
     BackgroundTransparency = 1,
     ZIndex = 101,
     Parent = SettingsPanel
 })
 
--- Tab system
-local Tabs = {
-    { Name = "Keybinds",    Active = false },
-    { Name = "Auto TP",     Active = false },
-    { Name = "ESP",         Active = false },
-    { Name = "UI",          Active = true  },
-    { Name = "Misc",        Active = false },
-    { Name = "Priority",    Active = false },
-    { Name = "Performance", Active = false },
-}
+local Tabs = {"Keybinds", "Auto TP", "ESP", "UI", "Misc", "Priority", "Performance"}
+local TabFrames, TabButtons = {}, {}
 
-local TabFrames = {}
-local TabButtons = {}
-
-for i, tab in ipairs(Tabs) do
+for i, name in ipairs(Tabs) do
+    local active = (name == "UI")
     local btn = Create("TextButton", {
-        Size = UDim2.new(1 / #Tabs, -3, 1, 0),
+        Size = UDim2.new(1/#Tabs, -2, 1, 0),
         LayoutOrder = i,
-        BackgroundColor3 = tab.Active and Theme.Accent or Theme.Surface,
-        BackgroundTransparency = tab.Active and 0.3 or 0.7,
+        BackgroundColor3 = active and Theme.Accent or Theme.Surface,
+        BackgroundTransparency = active and 0.25 or 0.65,
         FontFace = Theme.FontBold,
-        Text = tab.Name,
-        TextColor3 = tab.Active and Theme.TextPrimary or Theme.TextMuted,
+        Text = name,
+        TextColor3 = active and Theme.TextPrimary or Theme.TextMuted,
         TextScaled = true,
         TextWrapped = true,
         ZIndex = 103,
         Parent = NavFrame
     })
-    Corner(btn, 5)
-    TabButtons[tab.Name] = btn
+    Corner(btn, 4)
+    TabButtons[name] = btn
 
     local scroll = Create("ScrollingFrame", {
-        Name = tab.Name,
+        Name = name,
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1,
-        Visible = tab.Active,
+        Visible = active,
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        CanvasSize = UDim2.new(0, 0, 0, 0),
+        CanvasSize = UDim2.new(),
         ScrollBarImageColor3 = Theme.Accent,
         ScrollBarThickness = 3,
         ScrollingDirection = Enum.ScrollingDirection.Y,
@@ -403,205 +449,131 @@ for i, tab in ipairs(Tabs) do
         Parent = ContentFrame
     })
     Create("UIListLayout", {
-        Padding = UDim.new(0, 5),
+        Padding = UDim.new(0, 4),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = scroll
     })
-    TabFrames[tab.Name] = scroll
+    TabFrames[name] = scroll
 end
 
 local function SwitchTab(name)
-    for tabName, frame in pairs(TabFrames) do
-        frame.Visible = (tabName == name)
-        local btn = TabButtons[tabName]
-        if btn then
-            local active = tabName == name
-            btn.BackgroundColor3 = active and Theme.Accent or Theme.Surface
-            btn.BackgroundTransparency = active and 0.3 or 0.7
-            btn.TextColor3 = active and Theme.TextPrimary or Theme.TextMuted
+    for n, frame in pairs(TabFrames) do
+        frame.Visible = (n == name)
+        local b = TabButtons[n]
+        if b then
+            local a = (n == name)
+            b.BackgroundColor3 = a and Theme.Accent or Theme.Surface
+            b.BackgroundTransparency = a and 0.25 or 0.65
+            b.TextColor3 = a and Theme.TextPrimary or Theme.TextMuted
         end
     end
 end
 
 for name, btn in pairs(TabButtons) do
-    btn.MouseButton1Click:Connect(function()
-        SwitchTab(name)
-    end)
+    btn.MouseButton1Click:Connect(function() SwitchTab(name) end)
 end
 
--- ── Keybinds Tab Content ─────────────────────────────────────
+-- Keybinds
 local KeybindData = {
-    { "Kick", "Y" },
-    { "Rejoin Job ID", "J" },
-    { "Clone", "F" },
-    { "Manual TP", "T" },
-    { "Invisible Steal", "U" },
-    { "Job ID", "K" },
-    { "Proximity", "P" },
-    { "Carpet Boost", "Q" },
-    { "Walkspeed", "V" },
-    { "Open Menu", "LeftControl" },
-    { "Ragdoll Self", "R" },
-    { "Body Swap TP", "Y" },
-    { "Auto Turret", "G" },
-    { "Float", "B" },
-    { "Reset Character", "X" },
-    { "Click to AP", "Z" },
-    { "Desync (Synapse Z only)", "LeftShift" },
-    { "Auto Buy Carpet", "N" },
+    {"Kick","Y"}, {"Rejoin Job ID","J"}, {"Clone","F"}, {"Manual TP","T"},
+    {"Invisible Steal","U"}, {"Job ID","K"}, {"Proximity","P"}, {"Carpet Boost","Q"},
+    {"Walkspeed","V"}, {"Open Menu","LeftControl"}, {"Ragdoll Self","R"},
+    {"Body Swap TP","Y"}, {"Auto Turret","G"}, {"Float","B"}, {"Reset Character","X"},
+    {"Click to AP","Z"}, {"Desync","LeftShift"}, {"Auto Buy Carpet","N"}
 }
 
-for i, data in ipairs(KeybindData) do
+for i, d in ipairs(KeybindData) do
     local row = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 34),
+        Size = UDim2.new(1, 0, 0, isMobile and 28 or 32),
         BackgroundColor3 = Theme.Surface,
         BackgroundTransparency = 0.85,
         LayoutOrder = i,
         Parent = TabFrames["Keybinds"]
     })
-    Corner(row, 6)
+    Corner(row, 5)
 
     Create("TextLabel", {
-        Position = UDim2.new(0, 10, 0, 0),
-        Size = UDim2.new(1, -80, 1, 0),
+        Position = UDim2.new(0, 8, 0, 0),
+        Size = UDim2.new(1, -70, 1, 0),
         BackgroundTransparency = 1,
         FontFace = Theme.FontMedium,
-        Text = data[1],
+        Text = d[1],
         TextColor3 = Theme.TextPrimary,
-        TextSize = 12,
+        TextSize = isMobile and 11 or 12,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = row
     })
 
-    local keyBtn = Create("TextButton", {
-        Position = UDim2.new(1, -72, 0.5, -11),
-        Size = UDim2.new(0, 65, 0, 22),
+    local kb = Create("TextButton", {
+        Position = UDim2.new(1, -64, 0.5, -10),
+        Size = UDim2.new(0, 56, 0, 20),
         BackgroundColor3 = Theme.Accent,
-        BackgroundTransparency = 0.5,
+        BackgroundTransparency = 0.45,
         FontFace = Theme.FontBold,
-        Text = data[2],
+        Text = d[2],
         TextColor3 = Theme.TextPrimary,
-        TextSize = 11,
+        TextSize = 10,
         Parent = row
     })
-    Corner(keyBtn, 4)
+    Corner(kb, 4)
 end
 
--- ── UI Tab Content ───────────────────────────────────────────
+-- UI Toggles
 local UIToggles = {
-    { "Player List", true },
-    { "Command Cooldown", true },
-    { "Steal Panel", true },
-    { "Steal Target", true },
-    { "Movement Panel", true },
-    { "Admin Command Panel", true },
-    { "Unlock Doors", true },
-    { "Steal Progress Bar", true },
-    { "Clear Error Popups", true },
+    {"Player List", true},
+    {"Command Cooldown", true},
+    {"Steal Panel", true},
+    {"Steal Target", true},
+    {"Movement Panel", true},
+    {"Admin Command Panel", true},
+    {"Unlock Doors", true},
+    {"Steal Progress Bar", true},
+    {"Clear Error Popups", true},
 }
 
-for i, data in ipairs(UIToggles) do
-    local row = CreateToggle(TabFrames["UI"], data[1], data[2])
-    row.LayoutOrder = i
+for i, d in ipairs(UIToggles) do
+    local r = CreateToggle(TabFrames["UI"], d[1], d[2])
+    r.LayoutOrder = i
 end
 
--- Vertical Buttons row
-local vertRow = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 28),
-    BackgroundColor3 = Color3.fromRGB(35, 35, 50),
-    BackgroundTransparency = 0.7,
-    LayoutOrder = 10,
-    Parent = TabFrames["UI"]
-})
-Corner(vertRow, 6)
-
-Create("TextLabel", {
-    Position = UDim2.new(0, 20, 0, 0),
-    Size = UDim2.new(1, -55, 1, 0),
-    BackgroundTransparency = 1,
-    FontFace = Theme.FontMedium,
-    Text = "Vertical Buttons",
-    TextColor3 = Color3.fromRGB(180, 180, 200),
-    TextSize = 11,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    Parent = vertRow
-})
-
--- Reset / Lock UI buttons
-local actionRow = Create("Frame", {
-    Size = UDim2.new(1, -20, 0, 32),
-    BackgroundTransparency = 1,
-    LayoutOrder = 11,
-    Parent = TabFrames["UI"]
-})
-
-local resetUI = Create("TextButton", {
-    Position = UDim2.new(0.015, 0, 0, 0),
-    Size = UDim2.new(0.47, 0, 1, 0),
-    BackgroundColor3 = Theme.Surface,
-    FontFace = Theme.FontBold,
-    Text = "Reset UI",
-    TextColor3 = Theme.TextPrimary,
-    TextSize = 12,
-    Parent = actionRow
-})
-Corner(resetUI, 6)
-Stroke(resetUI, Theme.Accent, 0.5)
-
-local lockUI = Create("TextButton", {
-    Position = UDim2.new(0.515, 0, 0, 0),
-    Size = UDim2.new(0.47, 0, 1, 0),
-    BackgroundColor3 = Theme.Success,
-    FontFace = Theme.FontBold,
-    Text = "🔒 Locked UI",
-    TextColor3 = Theme.TextPrimary,
-    TextSize = 12,
-    Parent = actionRow
-})
-Corner(lockUI, 6)
-Stroke(lockUI, Theme.Accent, 0.5)
-
--- ── Performance Tab ──────────────────────────────────────────
+-- Performance
 local PerfToggles = {
-    { "FPS Boost", false },
-    { "Dark Mode", false },
-    { "Disable Object Animations", true },
-    { "Remove Player Accessories (Rejoin)", true },
-    { "Remove Tool Textures", false },
+    {"FPS Boost", false},
+    {"Dark Mode", false},
+    {"Disable Object Animations", true},
+    {"Remove Player Accessories", true},
+    {"Remove Tool Textures", false},
 }
-
-for i, data in ipairs(PerfToggles) do
-    local row = CreateToggle(TabFrames["Performance"], data[1], data[2])
-    row.LayoutOrder = i
+for i, d in ipairs(PerfToggles) do
+    local r = CreateToggle(TabFrames["Performance"], d[1], d[2])
+    r.LayoutOrder = i
 end
-
--- Priority & Misc tabs left intentionally clean for future features
 
 -- ═══════════════════════════════════════════════════════════════
 -- MOVEMENT PANEL
 -- ═══════════════════════════════════════════════════════════════
 local MovementPanel = Create("Frame", {
     Name = "WalkspeedFrame",
-    Position = UDim2.new(0, 20, 0.5, -365),
-    Size = UDim2.new(0, 220, 0, 398),
+    Position = isMobile and UDim2.new(0, 8, 0.15, 0) or UDim2.new(0, 16, 0.5, -200),
+    Size = PSize(210, 360),
     BackgroundColor3 = Theme.Background,
     BackgroundTransparency = 0.05,
     BorderSizePixel = 0,
-    ZIndex = 10,
+    ZIndex = 20,
     Parent = ScreenGui
 })
-Corner(MovementPanel, 12)
+Corner(MovementPanel, 10)
 
 local movTitle = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 35),
+    Size = UDim2.new(1, 0, 0, 32),
     BackgroundTransparency = 1,
     Name = "TitleBar",
     Parent = MovementPanel
 })
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 5),
-    Size = UDim2.new(1, 0, 0, 14),
+    Position = UDim2.new(0, 0, 0, 4),
+    Size = UDim2.new(1, 0, 0, 13),
     BackgroundTransparency = 1,
     FontFace = Theme.FontHeavy,
     Text = "XENHUB V5",
@@ -611,98 +583,103 @@ Create("TextLabel", {
 })
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 18),
-    Size = UDim2.new(1, 0, 0, 10),
+    Position = UDim2.new(0, 0, 0, 16),
+    Size = UDim2.new(1, 0, 0, 11),
     BackgroundTransparency = 1,
     FontFace = Theme.FontMedium,
-    Text = "Movement Panel",
+    Text = "Movement",
     TextColor3 = Theme.TextSecondary,
     TextSize = 9,
     Parent = movTitle
 })
 
 Create("Frame", {
-    Position = UDim2.new(0.075, 0, 0, 35),
-    Size = UDim2.new(0.85, 0, 0, 1),
+    Position = UDim2.new(0.08, 0, 0, 32),
+    Size = UDim2.new(0.84, 0, 0, 1),
     BackgroundColor3 = Theme.Accent,
     BackgroundTransparency = 0.5,
     Parent = MovementPanel
 })
 
-local movVars = { rotation = 180, depth = 5.0, speed = 27 }
+local movContent = Create("Frame", {
+    Position = UDim2.new(0, 8, 0, 40),
+    Size = UDim2.new(1, -16, 1, -48),
+    BackgroundTransparency = 1,
+    Parent = MovementPanel
+})
 
-local MovToggles = {
-    { "Invis Steal (U):", 45 },
-    { "Float (B):", 79 },
-    { "Walkspeed (V):", 113 },
-    { "Unwalk:", 147 },
-    { "Auto Walk to Base:", 181 },
-}
+Create("UIListLayout", {
+    Padding = UDim.new(0, 6),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    Parent = movContent
+})
 
-for _, data in ipairs(MovToggles) do
+-- Movement toggles
+local function MovToggle(text, key, order)
+    local row = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 26),
+        BackgroundTransparency = 1,
+        LayoutOrder = order,
+        Parent = movContent
+    })
+
     Create("TextLabel", {
-        Position = UDim2.new(0, 10, 0, data[2]),
-        Size = UDim2.new(0, 110, 0, 28),
+        Size = UDim2.new(0.6, 0, 1, 0),
         BackgroundTransparency = 1,
         FontFace = Theme.FontBold,
-        Text = data[1],
+        Text = text,
         TextColor3 = Color3.fromRGB(220, 220, 230),
-        TextSize = 13,
+        TextSize = isMobile and 11 or 12,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = MovementPanel
+        Parent = row
     })
 
     local btn = Create("TextButton", {
-        Position = UDim2.new(1, -80, 0, data[2]),
-        Size = UDim2.new(0, 75, 0, 28),
+        Position = UDim2.new(1, -58, 0, 0),
+        Size = UDim2.new(0, 56, 0, 24),
         BackgroundColor3 = Color3.fromRGB(50, 50, 65),
-        BackgroundTransparency = 0.15,
+        BackgroundTransparency = 0.1,
         FontFace = Theme.FontBold,
         Text = "OFF",
         TextColor3 = Theme.TextPrimary,
-        TextSize = 13,
-        Parent = MovementPanel
+        TextSize = 11,
+        Parent = row
     })
-    Corner(btn, 6)
+    Corner(btn, 5)
     Stroke(btn)
 
     local state = false
     btn.MouseButton1Click:Connect(function()
         state = not state
+        State[key] = state
         btn.Text = state and "ON" or "OFF"
         btn.BackgroundColor3 = state and Theme.Success or Color3.fromRGB(50, 50, 65)
-        btn.BackgroundTransparency = state and 0 or 0.15
+        btn.BackgroundTransparency = state and 0 or 0.1
+
+        -- Apply basic walkspeed logic
+        if key == "Walkspeed" then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+            if hum then
+                hum.WalkSpeed = state and State.Speed or 16
+            end
+        end
     end)
 end
 
+MovToggle("Invis Steal (U)", "InvisSteal", 1)
+MovToggle("Float (B)", "Float", 2)
+MovToggle("Walkspeed (V)", "Walkspeed", 3)
+MovToggle("Unwalk", "Unwalk", 4)
+MovToggle("Auto Walk", "AutoWalk", 5)
+
 -- Sliders
-local rotWrap = Create("Frame", {
-    Position = UDim2.new(0, 8, 0, 223),
-    Size = UDim2.new(1, -16, 0, 58),
-    BackgroundTransparency = 1,
-    Parent = MovementPanel
-})
-CreateSlider(rotWrap, "Rotation", 0, 360, 180, "int", function(v) movVars.rotation = v end)
-
-local depWrap = Create("Frame", {
-    Position = UDim2.new(0, 8, 0, 291),
-    Size = UDim2.new(1, -16, 0, 36),
-    BackgroundTransparency = 1,
-    Parent = MovementPanel
-})
-CreateSlider(depWrap, "Depth", 0.5, 10.5, 5.0, "float", function(v) movVars.depth = v end)
-
-local spdWrap = Create("Frame", {
-    Position = UDim2.new(0, 8, 0, 346),
-    Size = UDim2.new(1, -16, 0, 36),
-    BackgroundTransparency = 1,
-    Parent = MovementPanel
-})
-CreateSlider(spdWrap, "Speed", 16, 100, 27, "int", function(v)
-    movVars.speed = v
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildWhichIsA("Humanoid")
-    if hum then hum.WalkSpeed = v end
+CreateSlider(movContent, "Rotation", 0, 360, 180, "int", "Rotation")
+CreateSlider(movContent, "Depth", 0.5, 10.5, 5.0, "float", "Depth")
+CreateSlider(movContent, "Speed", 16, 100, 27, "int", "Speed", function(v)
+    if State.Walkspeed then
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+        if hum then hum.WalkSpeed = v end
+    end
 end)
 
 -- ═══════════════════════════════════════════════════════════════
@@ -710,78 +687,104 @@ end)
 -- ═══════════════════════════════════════════════════════════════
 local ActionsPanel = Create("Frame", {
     Name = "V5ActionsPanel",
-    Position = UDim2.new(1, -230, 1, -325),
-    Size = UDim2.new(0, 220, 0, 310),
+    Position = isMobile and UDim2.new(1, -150, 1, -280) or UDim2.new(1, -230, 1, -310),
+    Size = PSize(200, 280),
     AnchorPoint = Vector2.new(1, 1),
     BackgroundColor3 = Theme.Background,
     BackgroundTransparency = 0.05,
     BorderSizePixel = 0,
     Parent = ScreenGui
 })
-Corner(ActionsPanel, 12)
+Corner(ActionsPanel, 10)
 
 local actTitle = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 40),
+    Size = UDim2.new(1, 0, 0, 34),
     BackgroundTransparency = 1,
     Name = "TitleBar",
     Parent = ActionsPanel
 })
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 6),
-    Size = UDim2.new(1, 0, 0, 16),
+    Position = UDim2.new(0, 0, 0, 5),
+    Size = UDim2.new(1, 0, 0, 13),
     BackgroundTransparency = 1,
     FontFace = Theme.FontHeavy,
     Text = "XENHUB V5",
     TextColor3 = Theme.TextPrimary,
-    TextSize = 12,
+    TextSize = 11,
     Parent = actTitle
 })
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 20),
-    Size = UDim2.new(1, 0, 0, 12),
+    Position = UDim2.new(0, 0, 0, 17),
+    Size = UDim2.new(1, 0, 0, 11),
     BackgroundTransparency = 1,
     FontFace = Theme.FontMedium,
     Text = "Actions",
     TextColor3 = Theme.TextSecondary,
-    TextSize = 10,
+    TextSize = 9,
     Parent = actTitle
 })
 
 Create("Frame", {
-    Position = UDim2.new(0.075, 0, 0, 40),
-    Size = UDim2.new(0.85, 0, 0, 1),
+    Position = UDim2.new(0.08, 0, 0, 34),
+    Size = UDim2.new(0.84, 0, 0, 1),
     BackgroundColor3 = Theme.Accent,
     BackgroundTransparency = 0.5,
     Parent = ActionsPanel
 })
 
 local btnsFrame = Create("Frame", {
-    Position = UDim2.new(0, 6, 0, 48),
-    Size = UDim2.new(1, -12, 0, 255),
+    Position = UDim2.new(0, 6, 0, 42),
+    Size = UDim2.new(1, -12, 1, -48),
     BackgroundTransparency = 1,
     Name = "Buttons",
     Parent = ActionsPanel
 })
 
 Create("UIListLayout", {
-    Padding = UDim.new(0, 6),
+    Padding = UDim.new(0, 5),
     SortOrder = Enum.SortOrder.LayoutOrder,
     Parent = btnsFrame
 })
 
-CreateActionButton(btnsFrame, "Teleport (T)", Theme.Surface, 1)
-CreateActionButton(btnsFrame, "Ragdoll Self (R)", Theme.Surface, 2)
+CreateActionButton(btnsFrame, "Teleport (T)", Theme.Surface, 1, function()
+    -- Placeholder: teleport to mouse or selected target
+    print("[Xenhub] Teleport triggered")
+end)
+
+CreateActionButton(btnsFrame, "Ragdoll Self (R)", Theme.Surface, 2, function()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Physics)
+            for _, v in ipairs(char:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v:SetNetworkOwner(LocalPlayer)
+                end
+            end
+        end
+    end
+end)
+
 CreateActionButton(btnsFrame, "Rejoin PS", Theme.Surface, 3, function()
     TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end)
-CreateActionButton(btnsFrame, "Rejoin Job ID (J)", Theme.Surface, 4)
-CreateActionButton(btnsFrame, "Kick (Y)", Theme.Surface, 5)
+
+CreateActionButton(btnsFrame, "Rejoin Job ID (J)", Theme.Surface, 4, function()
+    print("[Xenhub] Job ID Rejoin - open Job ID panel")
+end)
+
+CreateActionButton(btnsFrame, "Kick (Y)", Theme.Surface, 5, function()
+    print("[Xenhub] Kick triggered")
+end)
+
 CreateActionButton(btnsFrame, "Reset (X)", Color3.fromRGB(200, 80, 80), 6, function()
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
     if hum then hum.Health = 0 end
 end)
+
 CreateActionButton(btnsFrame, "⚙ Settings", Theme.Accent, 7, function()
     SettingsPanel.Visible = not SettingsPanel.Visible
 end)
@@ -791,27 +794,26 @@ end)
 -- ═══════════════════════════════════════════════════════════════
 local StealPanel = Create("Frame", {
     Name = "StealPanel",
-    Position = UDim2.new(1, -230, 1, -611),
-    Size = UDim2.new(0, 220, 0, 272),
+    Position = isMobile and UDim2.new(1, -150, 1, -520) or UDim2.new(1, -230, 1, -580),
+    Size = PSize(200, 250),
     BackgroundColor3 = Theme.Background,
     BackgroundTransparency = 0.05,
     BorderSizePixel = 0,
-    ClipsDescendants = true,
-    ZIndex = 100,
+    ZIndex = 20,
     Parent = ScreenGui
 })
-Corner(StealPanel, 12)
+Corner(StealPanel, 10)
 
 local stealTitle = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 35),
+    Size = UDim2.new(1, 0, 0, 32),
     BackgroundTransparency = 1,
     Name = "V5TitleBar",
     Parent = StealPanel
 })
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 5),
-    Size = UDim2.new(1, 0, 0, 14),
+    Position = UDim2.new(0, 0, 0, 4),
+    Size = UDim2.new(1, 0, 0, 13),
     BackgroundTransparency = 1,
     FontFace = Theme.FontHeavy,
     Text = "XENHUB V5",
@@ -821,8 +823,8 @@ Create("TextLabel", {
 })
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 18),
-    Size = UDim2.new(1, 0, 0, 10),
+    Position = UDim2.new(0, 0, 0, 16),
+    Size = UDim2.new(1, 0, 0, 11),
     BackgroundTransparency = 1,
     FontFace = Theme.FontMedium,
     Text = "Steal Panel",
@@ -832,273 +834,188 @@ Create("TextLabel", {
 })
 
 Create("Frame", {
-    Position = UDim2.new(0.075, 0, 0, 35),
-    Size = UDim2.new(0.85, 0, 0, 1),
+    Position = UDim2.new(0.08, 0, 0, 32),
+    Size = UDim2.new(0.84, 0, 0, 1),
     BackgroundColor3 = Theme.Accent,
     BackgroundTransparency = 0.5,
     Parent = StealPanel
 })
 
-local StealToggles = {
-    { "Steal Highest:", 43, false },
-    { "Steal Priority:", 81, false },
-    { "Steal Nearest:", 119, false },
-    { "Auto Turret (G):", 157, false },
-    { "Auto Buy (N):", 195, false },
-    { "Auto Kick:", 233, true },
-}
-
-for _, data in ipairs(StealToggles) do
-    Create("TextLabel", {
-        Position = UDim2.new(0, 10, 0, data[2]),
-        Size = UDim2.new(0, 110, 0, 28),
-        BackgroundTransparency = 1,
-        FontFace = Theme.FontBold,
-        Text = data[1],
-        TextColor3 = Color3.fromRGB(220, 220, 230),
-        TextSize = 13,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = StealPanel
-    })
-
-    local btn = Create("TextButton", {
-        Position = UDim2.new(1, -80, 0, data[2]),
-        Size = UDim2.new(0, 75, 0, 28),
-        BackgroundColor3 = data[3] and Theme.Success or Color3.fromRGB(50, 50, 65),
-        BackgroundTransparency = data[3] and 0 or 0.15,
-        FontFace = Theme.FontBold,
-        Text = data[3] and "ON" or "OFF",
-        TextColor3 = Theme.TextPrimary,
-        TextSize = 13,
-        Parent = StealPanel
-    })
-    Corner(btn, 6)
-    Stroke(btn)
-
-    local state = data[3]
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        btn.Text = state and "ON" or "OFF"
-        btn.BackgroundColor3 = state and Theme.Success or Color3.fromRGB(50, 50, 65)
-        btn.BackgroundTransparency = state and 0 or 0.15
-    end)
-end
-
--- ═══════════════════════════════════════════════════════════════
--- PROXIMITY / ADMIN PANEL
--- ═══════════════════════════════════════════════════════════════
-local ProxPanel = Create("Frame", {
-    Name = "ProximityFrame",
-    Position = UDim2.new(1, -420, 1, -510),
-    Size = UDim2.new(0, 180, 0, 200),
-    BackgroundColor3 = Theme.Background,
-    BackgroundTransparency = 0.05,
-    Parent = ScreenGui
-})
-Corner(ProxPanel, 14)
-
-local proxHdr = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 34),
+local stealContent = Create("Frame", {
+    Position = UDim2.new(0, 8, 0, 40),
+    Size = UDim2.new(1, -16, 1, -48),
     BackgroundTransparency = 1,
-    Parent = ProxPanel
-})
-
-Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 5),
-    Size = UDim2.new(1, 0, 0, 14),
-    BackgroundTransparency = 1,
-    FontFace = Theme.FontHeavy,
-    Text = "XENHUB V5",
-    TextColor3 = Theme.TextPrimary,
-    TextSize = 11,
-    Parent = proxHdr
-})
-
-Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 18),
-    Size = UDim2.new(1, 0, 0, 10),
-    BackgroundTransparency = 1,
-    FontFace = Theme.FontMedium,
-    Text = "Admin Command Panel",
-    TextColor3 = Theme.TextSecondary,
-    TextSize = 9,
-    Parent = proxHdr
-})
-
-Create("Frame", {
-    Position = UDim2.new(0.075, 0, 1, -1),
-    Size = UDim2.new(0.85, 0, 0, 1),
-    BackgroundColor3 = Theme.Accent,
-    BackgroundTransparency = 0.5,
-    Parent = proxHdr
-})
-
-local function MakeProxBtn(y, text, name)
-    local btn = Create("TextButton", {
-        Position = UDim2.new(0.05, 0, 0, y),
-        Size = UDim2.new(0.9, 0, 0, 30),
-        BackgroundColor3 = Theme.Surface,
-        BackgroundTransparency = 0.3,
-        FontFace = Theme.FontBold,
-        Text = text,
-        TextColor3 = Color3.fromRGB(220, 220, 230),
-        TextSize = 12,
-        Name = name,
-        Parent = ProxPanel
-    })
-    Corner(btn, 6)
-    Stroke(btn)
-    return btn
-end
-
-MakeProxBtn(40, "Spam Base Owner", "SpamBaseOwnerBtn")
-
-local ctap = MakeProxBtn(75, "Click to AP: OFF", "ClickToAPBtn")
-local ctapState = false
-ctap.MouseButton1Click:Connect(function()
-    ctapState = not ctapState
-    ctap.Text = ctapState and "Click to AP: ON" or "Click to AP: OFF"
-    ctap.BackgroundColor3 = ctapState and Theme.Success or Theme.Surface
-    ctap.BackgroundTransparency = ctapState and 0 or 0.3
-end)
-
-local prox = MakeProxBtn(110, "Proximity: OFF", "ProxToggleBtn")
-local proxState = false
-prox.MouseButton1Click:Connect(function()
-    proxState = not proxState
-    prox.Text = proxState and "Proximity: ON" or "Proximity: OFF"
-    prox.BackgroundColor3 = proxState and Theme.Success or Theme.Surface
-    prox.BackgroundTransparency = proxState and 0 or 0.3
-end)
-
--- Distance slider
-local distWrap = Create("Frame", {
-    Position = UDim2.new(0.05, 0, 0, 150),
-    Size = UDim2.new(0.9, 0, 0, 38),
-    BackgroundTransparency = 1,
-    Parent = ProxPanel
-})
-CreateSlider(distWrap, "Distance", 5, 100, 15, "int")
-
--- ═══════════════════════════════════════════════════════════════
--- COOLDOWN PANEL
--- ═══════════════════════════════════════════════════════════════
-local CooldownPanel = Create("Frame", {
-    Name = "CooldownPanel",
-    Position = UDim2.new(1, -430, 1, -302),
-    Size = UDim2.new(0, 195, 0, 290),
-    BackgroundColor3 = Theme.Background,
-    BackgroundTransparency = 0.05,
-    Parent = ScreenGui
-})
-Corner(CooldownPanel, 12)
-
-local cdHdr = Create("Frame", {
-    Size = UDim2.new(1, 0, 0, 38),
-    BackgroundTransparency = 1,
-    Parent = CooldownPanel
-})
-
-Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 5),
-    Size = UDim2.new(1, 0, 0, 14),
-    BackgroundTransparency = 1,
-    FontFace = Theme.FontHeavy,
-    Text = "XENHUB V5",
-    TextColor3 = Theme.TextPrimary,
-    TextSize = 11,
-    Parent = cdHdr
-})
-
-Create("TextLabel", {
-    Position = UDim2.new(0, 0, 0, 18),
-    Size = UDim2.new(1, 0, 0, 10),
-    BackgroundTransparency = 1,
-    FontFace = Theme.FontMedium,
-    Text = "Command Cooldowns",
-    TextColor3 = Theme.TextSecondary,
-    TextSize = 9,
-    Parent = cdHdr
-})
-
-Create("Frame", {
-    Position = UDim2.new(0.075, 0, 1, -1),
-    Size = UDim2.new(0.85, 0, 0, 1),
-    BackgroundColor3 = Theme.Accent,
-    BackgroundTransparency = 0.5,
-    Parent = cdHdr
-})
-
-local cdContent = Create("Frame", {
-    Position = UDim2.new(0, 6, 0, 40),
-    Size = UDim2.new(1, -12, 1, -44),
-    BackgroundTransparency = 1,
-    Parent = CooldownPanel
+    Parent = StealPanel
 })
 
 Create("UIListLayout", {
-    Padding = UDim.new(0, 2),
+    Padding = UDim.new(0, 5),
     SortOrder = Enum.SortOrder.LayoutOrder,
-    Parent = cdContent
+    Parent = stealContent
 })
 
-local CooldownItems = { "Jail", "Rocket", "Inverse", "Ragdoll", "Jumpscare", "Tiny", "Balloon", "Morph", "Nightvision" }
-
-for i, name in ipairs(CooldownItems) do
+local function StealToggle(text, key, default, order)
     local row = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 25),
+        Size = UDim2.new(1, 0, 0, 26),
         BackgroundTransparency = 1,
-        LayoutOrder = i,
-        Parent = cdContent
+        LayoutOrder = order,
+        Parent = stealContent
     })
 
     Create("TextLabel", {
-        Position = UDim2.new(0, 8, 0, 0),
-        Size = UDim2.new(1, -70, 1, 0),
+        Size = UDim2.new(0.58, 0, 1, 0),
         BackgroundTransparency = 1,
         FontFace = Theme.FontBold,
-        Text = name,
+        Text = text,
         TextColor3 = Color3.fromRGB(220, 220, 230),
-        TextSize = 14,
+        TextSize = isMobile and 11 or 12,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = row
     })
 
-    Create("TextLabel", {
-        Position = UDim2.new(1, -65, 0.5, -10),
-        Size = UDim2.new(0, 58, 0, 20),
-        BackgroundTransparency = 1,
+    local btn = Create("TextButton", {
+        Position = UDim2.new(1, -58, 0, 0),
+        Size = UDim2.new(0, 56, 0, 24),
+        BackgroundColor3 = default and Theme.Success or Color3.fromRGB(50, 50, 65),
+        BackgroundTransparency = default and 0 or 0.1,
         FontFace = Theme.FontBold,
-        Text = "READY",
-        TextColor3 = Theme.Success,
+        Text = default and "ON" or "OFF",
+        TextColor3 = Theme.TextPrimary,
         TextSize = 11,
-        Name = "ReadyLabel",
         Parent = row
     })
+    Corner(btn, 5)
+    Stroke(btn)
+
+    local state = default
+    State[key] = state
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        State[key] = state
+        btn.Text = state and "ON" or "OFF"
+        btn.BackgroundColor3 = state and Theme.Success or Color3.fromRGB(50, 50, 65)
+        btn.BackgroundTransparency = state and 0 or 0.1
+    end)
 end
 
+StealToggle("Steal Highest", "StealHighest", false, 1)
+StealToggle("Steal Priority", "StealPriority", false, 2)
+StealToggle("Steal Nearest", "StealNearest", false, 3)
+StealToggle("Auto Turret (G)", "AutoTurret", false, 4)
+StealToggle("Auto Buy (N)", "AutoBuy", false, 5)
+StealToggle("Auto Kick", "AutoKick", true, 6)
+
 -- ═══════════════════════════════════════════════════════════════
--- BOTTOM BAR
+-- PROXIMITY PANEL
+-- ═══════════════════════════════════════════════════════════════
+local ProxPanel = Create("Frame", {
+    Name = "ProximityFrame",
+    Position = isMobile and UDim2.new(0, 8, 1, -210) or UDim2.new(1, -400, 1, -480),
+    Size = PSize(170, 180),
+    BackgroundColor3 = Theme.Background,
+    BackgroundTransparency = 0.05,
+    Parent = ScreenGui
+})
+Corner(ProxPanel, 10)
+
+local proxHdr = Create("Frame", {
+    Size = UDim2.new(1, 0, 0, 30),
+    BackgroundTransparency = 1,
+    Parent = ProxPanel
+})
+
+Create("TextLabel", {
+    Position = UDim2.new(0, 0, 0, 4),
+    Size = UDim2.new(1, 0, 0, 12),
+    BackgroundTransparency = 1,
+    FontFace = Theme.FontHeavy,
+    Text = "XENHUB V5",
+    TextColor3 = Theme.TextPrimary,
+    TextSize = 10,
+    Parent = proxHdr
+})
+
+Create("TextLabel", {
+    Position = UDim2.new(0, 0, 0, 15),
+    Size = UDim2.new(1, 0, 0, 11),
+    BackgroundTransparency = 1,
+    FontFace = Theme.FontMedium,
+    Text = "Admin Panel",
+    TextColor3 = Theme.TextSecondary,
+    TextSize = 9,
+    Parent = proxHdr
+})
+
+Create("Frame", {
+    Position = UDim2.new(0.08, 0, 0, 30),
+    Size = UDim2.new(0.84, 0, 0, 1),
+    BackgroundColor3 = Theme.Accent,
+    BackgroundTransparency = 0.5,
+    Parent = ProxPanel
+})
+
+local function MakeProxBtn(y, text, key)
+    local btn = Create("TextButton", {
+        Position = UDim2.new(0.06, 0, 0, y),
+        Size = UDim2.new(0.88, 0, 0, 26),
+        BackgroundColor3 = Theme.Surface,
+        BackgroundTransparency = 0.25,
+        FontFace = Theme.FontBold,
+        Text = text,
+        TextColor3 = Color3.fromRGB(220, 220, 230),
+        TextSize = isMobile and 11 or 12,
+        Parent = ProxPanel
+    })
+    Corner(btn, 5)
+    Stroke(btn)
+
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        if key then State[key] = state end
+        btn.Text = state and text:gsub("OFF", "ON") or text:gsub("ON", "OFF")
+        if not text:find("ON") and not text:find("OFF") then
+            -- static button
+        else
+            btn.BackgroundColor3 = state and Theme.Success or Theme.Surface
+            btn.BackgroundTransparency = state and 0 or 0.25
+        end
+    end)
+    return btn
+end
+
+MakeProxBtn(38, "Spam Base Owner")
+MakeProxBtn(68, "Click to AP: OFF", "ClickToAP")
+MakeProxBtn(98, "Proximity: OFF", "Proximity")
+
+local distWrap = Create("Frame", {
+    Position = UDim2.new(0.06, 0, 0, 132),
+    Size = UDim2.new(0.88, 0, 0, 36),
+    BackgroundTransparency = 1,
+    Parent = ProxPanel
+})
+CreateSlider(distWrap, "Distance", 5, 100, 15, "int", "ProxDistance")
+
+-- ═══════════════════════════════════════════════════════════════
+-- BOTTOM BAR (smaller on mobile)
 -- ═══════════════════════════════════════════════════════════════
 local BottomBar = Create("Frame", {
     Name = "XenhubV5Bar",
-    Position = UDim2.new(0.5, -285, 1, -135),
-    Size = UDim2.new(0, 570, 0, 60),
+    Position = isMobile and UDim2.new(0.5, -145, 1, -70) or UDim2.new(0.5, -270, 1, -80),
+    Size = isMobile and UDim2.new(0, 290, 0, 48) or UDim2.new(0, 540, 0, 54),
     BackgroundColor3 = Theme.Background,
     BackgroundTransparency = 0.05,
     BorderSizePixel = 0,
     ZIndex = 1000,
     Parent = ScreenGui
 })
-Corner(BottomBar, 14)
+Corner(BottomBar, 12)
 
--- Logo
 local logo = Create("Frame", {
-    Position = UDim2.new(0, 11, 0.5, -19),
-    Size = UDim2.new(0, 38, 0, 38),
+    Position = UDim2.new(0, 8, 0.5, -15),
+    Size = UDim2.new(0, 30, 0, 30),
     BackgroundColor3 = Color3.fromRGB(30, 30, 40),
     BackgroundTransparency = 0.3,
-    Name = "V5Logo",
     Parent = BottomBar
 })
 Corner(logo)
@@ -1112,18 +1029,15 @@ Create("ImageLabel", {
     Parent = logo
 })
 
--- Title with gradient
 local titleLbl = Create("TextLabel", {
-    Position = UDim2.new(0, 60, 0, 8),
-    Size = UDim2.new(0, 150, 0, 26),
+    Position = UDim2.new(0, 44, 0, 6),
+    Size = UDim2.new(0, isMobile and 90 or 130, 0, 20),
     BackgroundTransparency = 1,
     FontFace = Theme.FontHeavy,
     Text = "XENHUB V5",
     TextColor3 = Theme.TextPrimary,
-    TextSize = 22,
-    TextStrokeTransparency = 0.6,
+    TextSize = isMobile and 14 or 18,
     TextXAlignment = Enum.TextXAlignment.Left,
-    Name = "XenhubTitle",
     Parent = BottomBar
 })
 Gradient(titleLbl, ColorSequence.new({
@@ -1132,93 +1046,91 @@ Gradient(titleLbl, ColorSequence.new({
     ColorSequenceKeypoint.new(1, Color3.fromRGB(70, 74, 210)),
 }))
 
-Create("TextLabel", {
-    Position = UDim2.new(0, 222, 0, 8),
-    Size = UDim2.new(0, 200, 0, 26),
-    BackgroundTransparency = 1,
-    FontFace = Theme.FontHeavy,
-    Text = "discord.gg/xenhub",
-    TextColor3 = Theme.TextPrimary,
-    TextSize = 22,
-    TextStrokeTransparency = 0.6,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    Parent = BottomBar
-})
+if not isMobile then
+    Create("TextLabel", {
+        Position = UDim2.new(0, 180, 0, 6),
+        Size = UDim2.new(0, 160, 0, 20),
+        BackgroundTransparency = 1,
+        FontFace = Theme.FontHeavy,
+        Text = "discord.gg/xenhub",
+        TextColor3 = Theme.TextPrimary,
+        TextSize = 16,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = BottomBar
+    })
+end
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 60, 0, 32),
-    Size = UDim2.new(0, 350, 0, 28),
+    Position = UDim2.new(0, 44, 0, isMobile and 26 or 28),
+    Size = UDim2.new(0, 200, 0, 14),
     BackgroundTransparency = 1,
     FontFace = Theme.FontBold,
     Text = "by @themr4pf, @xendless & @ttttt1",
     TextColor3 = Theme.TextSecondary,
-    TextSize = 11,
+    TextSize = isMobile and 9 or 10,
     TextXAlignment = Enum.TextXAlignment.Left,
     Parent = BottomBar
 })
 
 -- Stats
 local statsBox = Create("Frame", {
-    Position = UDim2.new(1, -130, 0.5, -26),
-    Size = UDim2.new(0, 125, 0, 52),
+    Position = UDim2.new(1, isMobile and -90 or -120, 0.5, -18),
+    Size = UDim2.new(0, isMobile and 85 or 110, 0, 36),
     BackgroundTransparency = 1,
-    Name = "StatsBox",
     Parent = BottomBar
 })
 
 local fpsLabel = Create("TextLabel", {
-    Position = UDim2.new(0, 5, 0, 0),
-    Size = UDim2.new(1, 0, 0, 17),
+    Position = UDim2.new(0, 0, 0, 0),
+    Size = UDim2.new(1, 0, 0, 12),
     BackgroundTransparency = 1,
     FontFace = Theme.FontBold,
     Text = "FPS: 60",
     TextColor3 = Theme.Success,
-    TextSize = 13,
+    TextSize = isMobile and 10 or 11,
     TextXAlignment = Enum.TextXAlignment.Left,
-    Name = "FPSLabel",
     Parent = statsBox
 })
 
 local pingLabel = Create("TextLabel", {
-    Position = UDim2.new(0, 5, 0, 17),
-    Size = UDim2.new(1, 0, 0, 17),
+    Position = UDim2.new(0, 0, 0, 12),
+    Size = UDim2.new(1, 0, 0, 12),
     BackgroundTransparency = 1,
     FontFace = Theme.FontBold,
     Text = "PING: 0ms",
     TextColor3 = Theme.Success,
-    TextSize = 13,
+    TextSize = isMobile and 10 or 11,
     TextXAlignment = Enum.TextXAlignment.Left,
-    Name = "PINGLabel",
     Parent = statsBox
 })
 
 Create("TextLabel", {
-    Position = UDim2.new(0, 5, 0, 34),
-    Size = UDim2.new(1, 0, 0, 17),
+    Position = UDim2.new(0, 0, 0, 24),
+    Size = UDim2.new(1, 0, 0, 12),
     BackgroundTransparency = 1,
     FontFace = Theme.FontBold,
     Text = "Desync: OFF",
     TextColor3 = Theme.Danger,
-    TextSize = 13,
+    TextSize = isMobile and 10 or 11,
     TextXAlignment = Enum.TextXAlignment.Left,
     Name = "DesyncLabel",
     Parent = statsBox
 })
 
 -- ═══════════════════════════════════════════════════════════════
--- BOTTOM RIGHT BUTTONS
+-- BOTTOM RIGHT BUTTONS (mobile friendly)
 -- ═══════════════════════════════════════════════════════════════
 local BRFrame = Create("Frame", {
     Name = "BottomRightButtonsFrame",
-    Position = UDim2.new(1, -20, 1, -25),
-    Size = UDim2.new(0, 160, 0, 360),
+    Position = UDim2.new(1, -12, 1, -12),
+    Size = UDim2.new(0, isMobile and 120 or 140, 0, 100),
     AnchorPoint = Vector2.new(1, 1),
     BackgroundTransparency = 1,
     Parent = ScreenGui
 })
 
 Create("UIListLayout", {
-    Padding = UDim.new(0, 6),
+    Padding = UDim.new(0, 5),
     HorizontalAlignment = Enum.HorizontalAlignment.Right,
     VerticalAlignment = Enum.VerticalAlignment.Bottom,
     SortOrder = Enum.SortOrder.LayoutOrder,
@@ -1227,34 +1139,34 @@ Create("UIListLayout", {
 
 local function MakeBRBtn(name, text, order)
     local btn = Create("TextButton", {
-        Size = UDim2.new(1, 0, 0, 40),
+        Size = UDim2.new(1, 0, 0, isMobile and 32 or 36),
         BackgroundColor3 = Color3.new(0, 0, 0),
         LayoutOrder = order,
         FontFace = Theme.FontBold,
         Text = text,
         TextColor3 = Color3.fromRGB(240, 240, 240),
-        TextSize = 18,
+        TextSize = isMobile and 13 or 15,
         Name = name,
         Parent = BRFrame
     })
     Corner(btn, 6)
-    Stroke(btn, Color3.new(1, 1, 1), 0.4, 1.2)
+    Stroke(btn, Color3.new(1,1,1), 0.4, 1.2)
     return btn
 end
 
 local autoTP = MakeBRBtn("AutoTPButton", "Auto TP [OFF]", 1)
-local autoTurret = MakeBRBtn("AutoTurretBtn", "Auto Turret: OFF", 4)
+local autoTurret = MakeBRBtn("AutoTurretBtn", "Auto Turret: OFF", 2)
 
-local atpState, aturState = false, false
 autoTP.MouseButton1Click:Connect(function()
-    atpState = not atpState
-    autoTP.Text = atpState and "Auto TP [ON]" or "Auto TP [OFF]"
-    autoTP.BackgroundColor3 = atpState and Theme.Success or Color3.new(0, 0, 0)
+    State.AutoTP = not State.AutoTP
+    autoTP.Text = State.AutoTP and "Auto TP [ON]" or "Auto TP [OFF]"
+    autoTP.BackgroundColor3 = State.AutoTP and Theme.Success or Color3.new(0,0,0)
 end)
+
 autoTurret.MouseButton1Click:Connect(function()
-    aturState = not aturState
-    autoTurret.Text = aturState and "Auto Turret: ON" or "Auto Turret: OFF"
-    autoTurret.BackgroundColor3 = aturState and Theme.Success or Color3.new(0, 0, 0)
+    State.AutoTurret = not State.AutoTurret
+    autoTurret.Text = State.AutoTurret and "Auto Turret: ON" or "Auto Turret: OFF"
+    autoTurret.BackgroundColor3 = State.AutoTurret and Theme.Success or Color3.new(0,0,0)
 end)
 
 -- ═══════════════════════════════════════════════════════════════
@@ -1262,31 +1174,36 @@ end)
 -- ═══════════════════════════════════════════════════════════════
 local UnlockContainer = Create("Frame", {
     Name = "UnlockBtnContainer",
-    Position = UDim2.new(0.5, -100, 1, -200),
-    Size = UDim2.new(0, 200, 0, 51),
+    Position = isMobile and UDim2.new(0.5, -80, 1, -130) or UDim2.new(0.5, -95, 1, -160),
+    Size = isMobile and UDim2.new(0, 160, 0, 42) or UDim2.new(0, 190, 0, 48),
     BackgroundColor3 = Color3.fromRGB(10, 10, 16),
     BackgroundTransparency = 0.08,
-    ZIndex = 101,
+    ZIndex = 50,
     Parent = ScreenGui
 })
-Corner(UnlockContainer, 12)
+Corner(UnlockContainer, 10)
 Stroke(UnlockContainer, Color3.fromRGB(47, 60, 255), 0.5, 1.5)
 
-for i, xOff in ipairs({4, 70, 136}) do
+for i, xOff in ipairs(isMobile and {4, 54, 104} or {6, 66, 126}) do
     local btn = Create("TextButton", {
         Position = UDim2.new(0, xOff, 0, 4),
-        Size = UDim2.new(0, 60, 0, 43),
+        Size = UDim2.new(0, isMobile and 46 or 54, 0, isMobile and 34 or 40),
         BackgroundColor3 = Color3.fromRGB(14, 17, 23),
         BackgroundTransparency = 0.05,
         FontFace = Theme.FontBold,
         Text = tostring(i),
         TextColor3 = Color3.fromRGB(217, 225, 255),
-        TextSize = 14,
+        TextSize = isMobile and 13 or 14,
         Name = "UnlockFloor" .. i,
         Parent = UnlockContainer
     })
-    Corner(btn, 14)
+    Corner(btn, 10)
     Stroke(btn, Color3.fromRGB(47, 60, 255), 0.3, 1.5)
+
+    btn.MouseButton1Click:Connect(function()
+        print("[Xenhub] Unlock Floor " .. i)
+        -- Add your unlock logic here
+    end)
 end
 
 -- ═══════════════════════════════════════════════════════════════
@@ -1316,15 +1233,16 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Global UI toggle (RightShift)
+-- UI Visibility + Keybinds
 local uiVisible = true
 local managed = {
     SettingsPanel, MovementPanel, ActionsPanel, StealPanel,
-    ProxPanel, CooldownPanel, BottomBar, BRFrame, UnlockContainer
+    ProxPanel, BottomBar, BRFrame, UnlockContainer
 }
 
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
+
     if input.KeyCode == Enum.KeyCode.RightShift then
         uiVisible = not uiVisible
         for _, p in ipairs(managed) do
@@ -1332,16 +1250,27 @@ UserInputService.InputBegan:Connect(function(input, gpe)
         end
     elseif input.KeyCode == Enum.KeyCode.LeftControl then
         SettingsPanel.Visible = not SettingsPanel.Visible
+    elseif input.KeyCode == Enum.KeyCode.V then
+        -- Toggle walkspeed via key
+        State.Walkspeed = not State.Walkspeed
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+        if hum then
+            hum.WalkSpeed = State.Walkspeed and State.Speed or 16
+        end
+    elseif input.KeyCode == Enum.KeyCode.X then
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+        if hum then hum.Health = 0 end
     end
 end)
 
--- Dragging
+-- Dragging (all panels)
 MakeDraggable(BottomBar)
 MakeDraggable(SettingsPanel, Header)
 MakeDraggable(MovementPanel, movTitle)
 MakeDraggable(ActionsPanel, actTitle)
 MakeDraggable(StealPanel, stealTitle)
 MakeDraggable(ProxPanel)
-MakeDraggable(CooldownPanel)
+MakeDraggable(UnlockContainer)
 
-print("[XenhubV5] Clean optimized GUI loaded.")
+print("[XenhubV5] Mobile-optimized + fully interactive GUI loaded.")
+print("[XenhubV5] RightShift = Toggle UI | LeftControl = Settings")
